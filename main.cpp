@@ -1,15 +1,11 @@
 #include <iostream>
 #include <fstream>
-#include <utility>
 #include <vector>
 #include <chrono>
 #include <thread>
 #include <random>
 #include <algorithm>
-#include <limits>
 
-// using namespace std;
-// using namespace std::chrono;
 
 enum class RobotState
 {
@@ -36,14 +32,14 @@ struct Robot
 
 };
 
-enum class FailureReason {
-    NONE,
-    TIMEOUT,
-    NO_REPLACEMENT
-};
+// enum class FailureReason {
+//     NONE,
+//     TIMEOUT,
+//     NO_REPLACEMENT
+// };
 
 
-
+//will save various values that are relevant to each task
 class CsvLogger
 {
 private:
@@ -82,24 +78,24 @@ public:
     }
 
     void log(
-        int taskId,
-        int assignedRobotId,
-        int completedRobotId,
-        double expectedTravelTime,
-        double actualTravelTime,
-        double creationTick,
-        double startTick,
-        double finishTick,
-        double waitingTime,
-        double recoveryTime,
-        double blockageTime,
-        bool timeout,
-        bool reallocated,
-        double reallocationTick,
-        bool unnecessaryAbort,
-        bool completed,
-        bool dynamicTimeout,
-        bool dynamicReallocation)
+        const int taskId,
+        const int assignedRobotId,
+        const int completedRobotId,
+        const double expectedTravelTime,
+        const double actualTravelTime,
+        const double creationTick,
+        const double startTick,
+        const double finishTick,
+        const double waitingTime,
+        const double recoveryTime,
+        const double blockageTime,
+        const bool timeout,
+        const bool reallocated,
+        const double reallocationTick,
+        const bool unnecessaryAbort,
+        const bool completed,
+        const bool dynamicTimeout,
+        const bool dynamicReallocation)
     {
         file
             << taskId << ","
@@ -130,6 +126,7 @@ public:
     }
 };
 
+//will save various values relevant to the entire run
 class CsvScenarioLogger
 {
 private:
@@ -160,16 +157,16 @@ public:
     }
 
     void log(
-        int tasks,
-        int robots,
-        double failureRate,
-        int completed,
-        int timeouts,
-        int unnecessaryTimeouts,
-        double averageBlockageTime,
-        int reallocations,
-        double throughput,
-        double averageTaskTime)
+        const int tasks,
+        const int robots,
+        const double failureRate,
+        const int completed,
+        const int timeouts,
+        const int unnecessaryTimeouts,
+        const double averageBlockageTime,
+        const int reallocations,
+        const double throughput,
+        const double averageTaskTime)
     {
         file
             << tasks << ","
@@ -240,6 +237,8 @@ public:
         rng.seed(std::random_device{}());
         dynamicTimeout = dynTimeout;
         dynamicReallocation = dynReal;
+
+        //initialises all the robots in the fleet
         for(int i=0;i<numberOfRobots;i++)
         {
             Robot r{};
@@ -258,7 +257,7 @@ public:
         }
     }
 
-
+    //will set robots idle if they should be available (available time <= simulation time)
     void updateRobotStates()
     {
         for(auto& robot : robots)
@@ -274,7 +273,7 @@ public:
         }
     }
 
-
+    //will look for the first idle robot it can find
     Robot* findAvailableRobot()
     {
         for(auto& robot : robots)
@@ -288,6 +287,7 @@ public:
         return nullptr;
     }
 
+    //will look for the robot with the shortest average travel time
     Robot* findBestCandidate()
     {
         Robot* bestRobot = nullptr;
@@ -305,23 +305,27 @@ public:
         return bestRobot;
     }
 
-
+    //bases the timeout value on each task
     static double calculateDynamicTimeout(const double travelTime)
     {
         return travelTime * 1.5;
     }
 
+    //updates a robots average travel time and completed task counter
     static void updateRobotTimes(Robot* robot, const double travelTime) {
         robot->averageTravelTime = (robot->averageTravelTime * robot->tasksCompleted + travelTime) / (robot->tasksCompleted + 1);
         robot->tasksCompleted++;
     }
 
+    //will simulate a task being performed
     void simulateTask(const int taskId)
     {
         updateRobotStates();
         // auto failureReason = FailureReason::NONE;
         Robot* robot = findAvailableRobot();
         const double creationTick = simulationTime;
+
+        //tries to find an available robot, ticks the simulation forward if none are found
         while(robot == nullptr)
         {
             simulationTime += 5.0;
@@ -330,6 +334,7 @@ public:
 
             robot = findAvailableRobot();
         }
+
         const double taskStartTick = simulationTime;
         const double waitingTime = taskStartTick - creationTick;
         const int assignedRobot = robot->id;
@@ -346,6 +351,8 @@ public:
 
         double expectedTravelTime = travelDistribution(rng);
         double timeout;
+
+        //defines the tasks timeout length based on the dynamicTimeout setting
         if (dynamicTimeout) {
             timeout = calculateDynamicTimeout(expectedTravelTime);
         }
@@ -353,6 +360,7 @@ public:
             timeout = TIMEOUT_LENGTH;
         }
 
+        //how long the task actually takes differs from what the simulation thinks, this allows timeouts to occur
         double actualTravelTime = expectedTravelTime * std::max(0.5, delay(rng));
 
         robot->state = RobotState::BUSY;
@@ -360,6 +368,7 @@ public:
         robot->actualTravelTime = actualTravelTime;
         robot->availableAt = simulationTime + actualTravelTime;
 
+        //produces a number between 0.0 and 1 and will have a failureChance% chance at simulating a robot failing
         const bool robotFailed = failureDistribution(rng) < failureChance;
 
         double blockedTime = 0;
@@ -371,6 +380,7 @@ public:
         double reallocationTick = 0;
         double recoveryTime = 0;
 
+        //tries to find a robot to reallocate the task to
         if(robotFailed)
         {
             const double failureTick = simulationTime;
@@ -378,6 +388,7 @@ public:
             robot->recoveryAt = simulationTime + 120;
             Robot* replacement = nullptr;
 
+            //ticks the simulation while a suitable replacement cant be found
             while(replacement == nullptr) // look for replacement
             {
                 simulationTime += 5.0;
@@ -388,8 +399,6 @@ public:
                 else {
                     replacement = findAvailableRobot();
                 }
-
-
             }
 
             if(replacement) // replacement found
@@ -426,6 +435,7 @@ public:
                 blockedTime = actualTravelTime - timeout;
                 totalBlockageTime+= blockedTime;
 
+                //considers how much time it wouldve taken for the task to be completed anyways, then decides if the timeout is unnecessary based on the abortMargin
                 if (actualTravelTime < timeout * (1+abortMargin)) {
                     unnecessaryAbort = true;
                     unnecessaryAborts++;
@@ -440,6 +450,7 @@ public:
                 completedTasks++;
             }
         }
+        //calculates final values and adds to the logs
         previousTravelTimes.push_back(actualTravelTime);
         averageTaskTime = std::accumulate(previousTravelTimes.begin(), previousTravelTimes.end(), 0.0)/ static_cast<double>(previousTravelTimes.size());
         logger.log(
@@ -463,13 +474,15 @@ public:
             dynamicTimeout,
             dynamicReallocation
         );
-
+        //robot is done with its task now, it'll be set to idle
         robot->state = RobotState::IDLE;
     }
 
-    void runSimulation(int taskCount)
+    //simulates n tasks and logs the runs results
+    void runSimulation(const int taskCount)
     {
-        auto start = std::chrono::steady_clock::now();
+        const auto start = std::chrono::steady_clock::now();
+
 
         for(int i=1;i<=taskCount;i++)
         {
@@ -483,8 +496,7 @@ public:
 
 
         averageBlockageTime = totalBlockageTime/timeoutTasks;
-        auto end =
-            std::chrono::steady_clock::now();
+        const auto end = std::chrono::steady_clock::now();
 
         std::cout << "\n=== RESULTATEN ===\n";
 
@@ -560,25 +572,27 @@ public:
 int main()
 {
 
-    int numberofTasks;
+    int numberOfTasks;
     int numberOfRobots;
 
+    //not idiot proof, dont try entering invalid values
     std::cout << "Geef de hoeveelheid taken om te simuleren: ";
-    std::cin >> numberofTasks;
+    std::cin >> numberOfTasks;
     std::cout << "Geef de hoeveelheid robots in de robotvloot: ";
     std::cin >> numberOfRobots;
 
-    FleetManager fleet1(5, false, false, "statisch_zonder_herallocatie");
-    fleet1.runSimulation(std::min(1000000, numberofTasks));
+    //simulates each possible iteration of research relevant settings
+    FleetManager fleet1(numberOfRobots, false, false, "statisch_zonder_herallocatie");
+    fleet1.runSimulation(std::min(1000000, numberOfTasks));
 
-    FleetManager fleet2(5, false, true, "statisch_met_herallocatie");
-    fleet2.runSimulation(std::min(1000000, numberofTasks));
+    FleetManager fleet2(numberOfRobots, false, true, "statisch_met_herallocatie");
+    fleet2.runSimulation(std::min(1000000, numberOfTasks));
 
-    FleetManager fleet3(5, true, false, "dynamisch_zonder_herallocatie");
-    fleet3.runSimulation(std::min(1000000, numberofTasks));
+    FleetManager fleet3(numberOfRobots, true, false, "dynamisch_zonder_herallocatie");
+    fleet3.runSimulation(std::min(1000000, numberOfTasks));
 
-    FleetManager fleet4(5, true, true, "dynamisch_met_herallocatie");
-    fleet4.runSimulation(std::min(1000000, numberofTasks));
+    FleetManager fleet4(numberOfRobots, true, true, "dynamisch_met_herallocatie");
+    fleet4.runSimulation(std::min(1000000, numberOfTasks));
 
     return 0;
 }
