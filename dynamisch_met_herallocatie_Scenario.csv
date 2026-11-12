@@ -1,0 +1,2 @@
+Tasks,Robots,FailureRate,Completed,Timeouts,UnnecessaryTimeouts,AverageBlockageTime,Reallocations,Throughput,AverageTaskTime
+10000,5,0.1,8024,996,503,34.1373,980,0.0200392,184.648
